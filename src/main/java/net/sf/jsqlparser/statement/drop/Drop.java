@@ -78,7 +78,11 @@ public class Drop implements Statement {
            + (ifExists?"IF EXISTS ":"") + name.toString();
 
 		if (parameters != null && !parameters.isEmpty()) {
-			sql += " " + PlainSelect.getStringList(parameters);
+
+			for ( String item : parameters) {
+				sql += " " + item;
+			}
+			//sql += " " + PlainSelect.getStringList(parameters);
 		}
 
 		return sql;

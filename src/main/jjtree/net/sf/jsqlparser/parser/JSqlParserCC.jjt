@@ -3029,8 +3029,8 @@ Drop Drop():
     [<K_IF> <K_EXISTS> {drop.setIfExists(true);} ]
 
 	name = Table() { drop.setName(name); }
-	((tk=<S_IDENTIFIER> | tk=<K_CASCADE>) { dropArgs.add(tk.image); })*
-
+	( (tk=<S_IDENTIFIER> | tk=<K_CASCADE>) { dropArgs.add(tk.image); })*
+    [ <K_AS> <S_QUOTED_IDENTIFIER> ]
 	{
 		if (dropArgs.size() > 0)
 			drop.setParameters(dropArgs);
