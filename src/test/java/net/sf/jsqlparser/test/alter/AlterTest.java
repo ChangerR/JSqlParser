@@ -129,4 +129,11 @@ public class AlterTest extends TestCase {
         assertSqlCanBeParsedAndDeparsed("ALTER TABLE mytable ADD COLUMN col1 bit varying");
     }
 
+    public void testAlterTableAddColumnWithOut() throws JSQLParserException {
+        Statement statement = CCJSqlParserUtil.parse("ALTER TABLE mytable add column timestamp primary key not null");
+        if(statement instanceof Alter) {
+            Alter alter = (Alter)statement;
+            System.out.print(alter.getTable());
+        }
+    }
 }

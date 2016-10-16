@@ -23,7 +23,7 @@
 options{
     IGNORE_CASE=true ;
     STATIC=false;
-	DEBUG_PARSER=false;
+	DEBUG_PARSER=true;
     DEBUG_LOOKAHEAD=false;
     DEBUG_TOKEN_MANAGER=false;
 //  FORCE_LA_CHECK=true;
@@ -75,6 +75,8 @@ import net.sf.jsqlparser.statement.truncate.*;
 import net.sf.jsqlparser.statement.update.*;
 import net.sf.jsqlparser.statement.merge.*;
 import net.sf.jsqlparser.statement.create.trigger.*;
+import net.sf.jsqlparser.statement.create.procedure.*;
+import net.sf.jsqlparser.statement.create.function.*;
 import java.util.*;
 
 /**
@@ -261,6 +263,22 @@ TOKEN: /* SQL Keywords. prefixed with K_ to avoid name clashes */
 |   <K_EACH : "EACH">
 |   <K_FOLLOWS : "FOLLOWS">
 |   <K_PRECEDES : "PRECEDES">
+|   <K_PROCEDURE : "PROCEDURE">
+|   <K_INOUT : "INOUT">
+|   <K_OUT : "OUT">
+|   <K_COMMENT : "COMMENT">
+|   <K_SQL : "SQL">
+|   <K_DATA : "DATA">
+|   <K_READS  : "READS">
+|   <K_INVOKE : "INVOKE">
+|   <K_LANGUAGE : "LANGUAGE">
+|   <K_CONTAINS : "CONTAINS">
+|   <K_SECURITY : "SECURITY">
+|   <K_DETERMINISTIC : "DETERMINISTIC">
+|   <K_FUNCTION : "FUNCTION">
+|   <K_RETURNS : "RETURNS">
+|   <K_DECLARE : "DECLARE">
+|   <K_RETURN  : "RETURN">
 }
 
 TOKEN : /* Stuff */
@@ -370,7 +388,13 @@ Statement SingleStatement() :
 		|
 		stm = Set()
 		|
+		LOOKAHEAD(7)
 		stm = CreateTrigger()
+		|
+		LOOKAHEAD(7)
+		stm = CreateProcedure()
+		|
+		stm = CreateFunction()
 		)
     } catch (ParseException e) {
 		if (errorRecovery) {
@@ -3081,6 +3105,7 @@ AlterExpression AlterExpression():
     		alterExp.setOperation(AlterOperation.ADD);
     	}
     	  (
+    	  LOOKAHEAD(3)
         (  <K_COLUMN>
 	       sk3 = RelObjectName() dataType=ColDataType()
             { alterExp.addColDataType(sk3, dataType); }
@@ -3146,6 +3171,13 @@ AlterExpression AlterExpression():
             }
            ) )
         )
+        |
+        (   sk3 = RelObjectName() dataType=ColDataType()
+
+            { alterExp.addColDataType(sk3, dataType); }
+            ((<K_NOT> <K_NULL>) | (<K_PRIMARY> | <K_KEY>))*
+            [ ((<K_FIRST>|<K_AFTER>) RelObjectName())]
+		)
         )
     )
     |
@@ -3203,7 +3235,7 @@ CreateTrigger CreateTrigger():
 }
 {
     <K_CREATE>
-    ( <K_DEFINER> "=" (<S_IDENTIFIER>)((<S_QUOTED_IDENTIFIER> | <S_CHAR_LITERAL>))?)?
+    ( <K_DEFINER> "=" (<S_QUOTED_IDENTIFIER>)("@" (<S_QUOTED_IDENTIFIER> | <S_CHAR_LITERAL>))?)?
     <K_TRIGGER> trigger=Table() { createTrigger.setTrigger(trigger); }
     ( <K_BEFORE> | <K_AFTER>) ( <K_INSERT> | <K_UPDATE> | <K_DELETE>)
     <K_ON> onTable=Table() <K_FOR> <K_EACH> <K_ROW>
@@ -3212,4 +3244,104 @@ CreateTrigger CreateTrigger():
     {
         return createTrigger;
     }
+}
+
+CreateProcedure CreateProcedure() :
+{
+    CreateProcedure createProcedure = new CreateProcedure();
+    Table spName;
+    List<Parameter> parameters;
+    List<Statement> statements = new ArrayList<Statement>();
+    Statement stmt;
+}
+{
+    <K_CREATE>
+    ( <K_DEFINER> "=" (<S_QUOTED_IDENTIFIER>)("@" (<S_QUOTED_IDENTIFIER> | <S_CHAR_LITERAL>))?)?
+    <K_PROCEDURE> spName=Table() { createProcedure.setSpName(spName);}
+    "(" parameters=ProcParameter() ")" [Characteristic()]
+    <K_BEGIN>
+       ( (
+           (<K_DECLARE> <S_IDENTIFIER> ColDataType())
+           |
+           (<K_RETURN> <S_IDENTIFIER>)
+           |
+           (stmt=SingleStatement() { statements.add(stmt); })
+       ) ";")*
+    <K_END>
+    {
+        createProcedure.setParameterList(parameters);
+        createProcedure.setStatements(statements);
+        return createProcedure;
+    }
+}
+
+CreateFunction CreateFunction() :
+{
+    CreateFunction createFunction = new CreateFunction();
+    Table spName;
+    List<Parameter> parameters;
+    List<Statement> statements = new ArrayList<Statement>();
+    Statement stmt;
+    ColDataType returnType;
+}
+{
+    <K_CREATE>
+    ( <K_DEFINER> "=" (<S_QUOTED_IDENTIFIER>)("@" (<S_QUOTED_IDENTIFIER> | <S_CHAR_LITERAL>))?)?
+    <K_FUNCTION> spName=Table() { createFunction.setSpName(spName);}
+    "(" parameters=ProcParameter() ")"
+    <K_RETURNS> returnType=ColDataType()
+    [Characteristic()]
+    <K_BEGIN>
+        ( (
+            (<K_DECLARE> <S_IDENTIFIER> ColDataType())
+            |
+            (<K_RETURN> <S_IDENTIFIER>)
+            |
+            (stmt=SingleStatement() { statements.add(stmt); })
+        ) ";")*
+    <K_END>
+    {
+        createFunction.setReturnType(returnType);
+        createFunction.setParameterList(parameters);
+        createFunction.setStatements(statements);
+        return createFunction;
+    }
+}
+
+List<Parameter> ProcParameter() :
+{
+    List<Parameter> parameters = new ArrayList<Parameter>();
+    String inOut = null;
+    String name;
+    ColDataType type;
+    Token t;
+}
+{
+    (
+    ((t=<K_IN>|t=<K_INOUT>|t=<K_OUT>) {inOut=t.image;})?
+    name=RelObjectName() type=ColDataType()
+    {
+        parameters.add(new Parameter(inOut,name,type));
+    }
+    )*
+    {
+        return parameters;
+    }
+}
+
+void Characteristic() :
+{}
+{
+    ( <K_COMMENT> <S_QUOTED_IDENTIFIER> )
+    |
+    ( <K_LANGUAGE> <K_SQL>)
+    |
+    ( <K_NOT> <K_DETERMINISTIC> )
+    |
+    (
+        (<K_CONTAINS> <K_SQL>)
+        | (<K_NO> <K_SQL>)
+        | (<K_READS> <K_SQL> <K_DATA>)
+        | (<K_SQL> <K_SECURITY> (<K_INVOKE> | <K_DEFINER>))
+    )
 }
